@@ -120,7 +120,7 @@ boot_alloc(uint32_t n)
 
 #ifdef SANITIZE_SHADOW_BASE
 	// Unpoison the result since it is now allocated.
-	// platform_asan_unpoison(result, n);
+	platform_asan_unpoison(result, n);
 #endif
 
 	return result;
