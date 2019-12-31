@@ -605,7 +605,18 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 8: Your code here.
-
+	pte_t *ptep;
+	uintptr_t a;
+	perm |= PTE_P;
+	for (a = ROUNDDOWN((uintptr_t) va, PGSIZE); a < ROUNDUP((uintptr_t) va + len, PGSIZE); a += PGSIZE) {
+		if (a >= ULIM || !page_lookup(env->env_pgdir, (void *) a, &ptep) || (*ptep & perm) != perm) {
+			if (a == ROUNDDOWN((uintptr_t) va, PGSIZE)) {
+				a = (uintptr_t) va;
+			}
+			user_mem_check_addr = a;
+			return -E_FAULT;
+		}
+	}
 	return 0;
 }
 
@@ -626,37 +637,6 @@ user_mem_assert(struct Env *env, const void *va, size_t len, int perm)
 	}
 }
 
-
-static uintptr_t user_mem_check_addr;
-
-int
-user_mem_check(struct Env *env, const void *va, size_t len, int perm)
-{
-	// LAB 8: Your code here.
-	pte_t *ptep;
-	uintptr_t a;
-	perm |= PTE_P;
-	for (a = ROUNDDOWN((uintptr_t) va, PGSIZE); a < ROUNDUP((uintptr_t) va + len, PGSIZE); a += PGSIZE) {
-		if (a >= ULIM || !page_lookup(env->env_pgdir, (void *) a, &ptep) || (*ptep & perm) != perm) {
-			if (a == ROUNDDOWN((uintptr_t) va, PGSIZE)) {
-				a = (uintptr_t) va;
-			}
-			user_mem_check_addr = a;
-			return -E_FAULT;
-		}
-	}
-	return 0;
-}
-
-
-void
-user_mem_assert(struct Env *env, const void *va, size_t len, int perm)
-{
-	if (user_mem_check(env, va, len, perm | PTE_U) < 0) {
-		cprintf("[%08x] user_mem_check assertion failure for va %08x\n", env->env_id, user_mem_check_addr);
-		env_destroy(env);	// may not return
-	}
-}
 
 // --------------------------------------------------------------
 // Checking functions.
