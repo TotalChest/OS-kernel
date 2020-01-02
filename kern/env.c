@@ -549,12 +549,14 @@ env_destroy(struct Env *e)
 	//LAB 3: Your code here.
 	env_free(e);
 
-	if (e == curenv)
+	if (e == curenv){
+		curenv = NULL;
 		sched_yield();
+	}
 }
 
 #ifdef CONFIG_KSPACE
-void
+voids
 csys_exit(void)
 {
 	env_destroy(curenv);
