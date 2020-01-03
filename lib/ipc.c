@@ -24,7 +24,7 @@ ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 {
 	// LAB 9: Your code here.
 	int err;
-	if ((err = sys_ipc_recv(pg ? pg : (void *) -1))) {
+	if ((err = sys_ipc_recv(pg ? pg : (void *) -1)) < 0) {
 		if (from_env_store) *from_env_store = 0;
 		if (perm_store) *perm_store = 0;
 		return err;
