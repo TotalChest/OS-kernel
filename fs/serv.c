@@ -14,6 +14,7 @@
 
 #define debug 0
 
+#define BUFSIZE PGSIZE
 // The file system server maintains three structures
 // for each open file.
 //
@@ -161,7 +162,7 @@ try_open:
 	// Fill out the Fd structure
 	o->o_fd->fd_file.id = o->o_fileid;
 	o->o_fd->fd_omode = req->req_omode & O_ACCMODE;
-	o->o_fd->fd_dev_id = devfile.dev_id;
+	o->o_fd->fd_dev_id = devfile.dev_id;//
 	o->o_mode = req->req_omode;
 
 	if (debug)
@@ -218,6 +219,9 @@ serve_read(envid_t envid, union Fsipc *ipc)
 	// Lab 10: Your code here:
 	if ((e = openfile_lookup(envid, req->req_fileid, &o)) < 0)
 		return e;
+	if (req->req_n > BUFSIZE) {
+		req->req_n = BUFSIZE;
+	}
 	if ((r = file_read(o->o_file, ret->ret_buf, req->req_n, o->o_fd->fd_offset)) > 0)
 		o->o_fd->fd_offset += r;
 	return r;

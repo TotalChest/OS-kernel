@@ -136,7 +136,7 @@ static struct Dev *devtab[] =
 	&devpipe,
 	&devcons,
 	0
-};
+};//
 
 int
 dev_lookup(int dev_id, struct Dev **dev)
