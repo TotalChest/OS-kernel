@@ -339,6 +339,28 @@ file_create(const char *path, struct File **pf)
 		return r;
 
 	strcpy(f->f_name, name);
+	f->f_type = FTYPE_REG;
+	*pf = f;
+	file_flush(dir);
+	return 0;
+}
+
+int
+fifo_create(const char *path, struct File **pf)
+{
+	char name[MAXNAMELEN];
+	int r;
+	struct File *dir, *f;
+
+	if ((r = walk_path(path, &dir, &f, name)) == 0)
+		return -E_FILE_EXISTS;
+	if (r != -E_NOT_FOUND || dir == 0)
+		return r;
+	if ((r = dir_alloc_file(dir, &f)) < 0)
+		return r;
+
+	strcpy(f->f_name, name);
+	f->f_type = FTYPE_FIF;
 	*pf = f;
 	file_flush(dir);
 	return 0;

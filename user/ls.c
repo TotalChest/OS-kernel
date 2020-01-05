@@ -3,7 +3,7 @@
 int flag[256];
 
 void lsdir(const char*, const char*);
-void ls1(const char*, bool, off_t, const char*);
+void ls1(const char*, bool, bool, off_t, const char*);
 
 void
 ls(const char *path, const char *prefix)
@@ -16,7 +16,7 @@ ls(const char *path, const char *prefix)
 	if (st.st_isdir && !flag['d'])
 		lsdir(path, prefix);
 	else
-		ls1(0, st.st_isdir, st.st_size, path);
+		ls1(0, st.st_isfifo, st.st_isdir, st.st_size, path);
 }
 
 void
@@ -29,7 +29,7 @@ lsdir(const char *path, const char *prefix)
 		panic("open %s: %i", path, fd);
 	while ((n = readn(fd, &f, sizeof f)) == sizeof f)
 		if (f.f_name[0])
-			ls1(prefix, f.f_type==FTYPE_DIR, f.f_size, f.f_name);
+			ls1(prefix, f.f_type==FTYPE_FIF, f.f_type==FTYPE_DIR, f.f_size, f.f_name);
 	if (n > 0)
 		panic("short read in directory %s", path);
 	if (n < 0)
@@ -37,12 +37,12 @@ lsdir(const char *path, const char *prefix)
 }
 
 void
-ls1(const char *prefix, bool isdir, off_t size, const char *name)
+ls1(const char *prefix, bool isfifo, bool isdir, off_t size, const char *name)
 {
 	const char *sep;
 
 	if(flag['l'])
-		printf("%11d %c ", size, isdir ? 'd' : '-');
+		printf("%11d %c ", size, isdir ? 'd' : isfifo ? 'p' : '-');
 	if(prefix) {
 		if (prefix[0] && prefix[strlen(prefix)-1] != '/')
 			sep = "/";

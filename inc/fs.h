@@ -47,7 +47,7 @@ struct File {
 // File types
 #define FTYPE_REG	0	// Regular file
 #define FTYPE_DIR	1	// Directory
-
+#define FTYPE_FIF	2	// FIFO
 
 // File system super-block (both in-memory and on-disk)
 
@@ -70,7 +70,8 @@ enum {
 	FSREQ_STAT,
 	FSREQ_FLUSH,
 	FSREQ_REMOVE,
-	FSREQ_SYNC
+	FSREQ_SYNC,
+	FSREQ_CREATE_FIFO
 };
 
 union Fsipc {
@@ -78,6 +79,9 @@ union Fsipc {
 		char req_path[MAXPATHLEN];
 		int req_omode;
 	} open;
+	struct Fsreq_create_fifo {
+		char req_path[MAXPATHLEN];
+	} create_fifo;
 	struct Fsreq_set_size {
 		int req_fileid;
 		off_t req_size;
@@ -101,6 +105,7 @@ union Fsipc {
 		char ret_name[MAXNAMELEN];
 		off_t ret_size;
 		int ret_isdir;
+		int ret_isfifo;
 	} statRet;
 	struct Fsreq_flush {
 		int req_fileid;

@@ -56,7 +56,7 @@ struct Dev devfile =
 // 	-E_BAD_PATH if the path is too long (>= MAXPATHLEN)
 // 	< 0 for other errors.
 int
-open(const char *path, int mode)
+open(const char *path, int mode)//
 {
 	// Find an unused file descriptor page using fd_alloc.
 	// Then send a file-open request to the file server.
@@ -168,6 +168,7 @@ devfile_stat(struct Fd *fd, struct Stat *st)
 	strcpy(st->st_name, fsipcbuf.statRet.ret_name);
 	st->st_size = fsipcbuf.statRet.ret_size;
 	st->st_isdir = fsipcbuf.statRet.ret_isdir;
+	st->st_isfifo = fsipcbuf.statRet.ret_isfifo;
 	return 0;
 }
 

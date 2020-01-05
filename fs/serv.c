@@ -162,7 +162,10 @@ try_open:
 	// Fill out the Fd structure
 	o->o_fd->fd_file.id = o->o_fileid;
 	o->o_fd->fd_omode = req->req_omode & O_ACCMODE;
-	o->o_fd->fd_dev_id = devfile.dev_id;//
+	if (f->f_type == FTYPE_FIF)
+		o->o_fd->fd_dev_id = devfifo.dev_id;
+	else
+		o->o_fd->fd_dev_id = devfile.dev_id;
 	o->o_mode = req->req_omode;
 
 	if (debug)
@@ -172,6 +175,23 @@ try_open:
 	// store its permission in *perm_store
 	*pg_store = o->o_fd;
 	*perm_store = PTE_P|PTE_U|PTE_W|PTE_SHARE;
+
+	return 0;
+}
+
+int
+serve_create_fifo(envid_t envid, struct Fsreq_create_fifo *req)
+{
+	char path[MAXPATHLEN];
+	struct File *f;
+	int r;
+
+	memmove(path, req->req_path, MAXPATHLEN);
+	path[MAXPATHLEN-1] = 0;
+
+	if ((r = fifo_create(path, &f)) < 0) {
+		return r;
+	}
 
 	return 0;
 }
@@ -271,6 +291,7 @@ serve_stat(envid_t envid, union Fsipc *ipc)
 	strcpy(ret->ret_name, o->o_file->f_name);
 	ret->ret_size = o->o_file->f_size;
 	ret->ret_isdir = (o->o_file->f_type == FTYPE_DIR);
+	ret->ret_isfifo = (o->o_file->f_type == FTYPE_DIR);
 	return 0;
 }
 
@@ -336,6 +357,8 @@ serve(void)
 		pg = NULL;
 		if (req == FSREQ_OPEN) {
 			r = serve_open(whom, (struct Fsreq_open*)fsreq, &pg, &perm);
+		} else if (req == FSREQ_CREATE_FIFO) {
+			r = serve_create_fifo(whom, (struct Fsreq_create_fifo*)fsreq);
 		} else if (req < NHANDLERS && handlers[req]) {
 			r = handlers[req](whom, fsreq);
 		} else {

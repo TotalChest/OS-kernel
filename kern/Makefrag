@@ -103,6 +103,8 @@ KERN_BINFILES :=	user/hello \
 			user/memlayout \
 			user/testfile \
 			user/icode \
+			user/initsh \
+			user/testfifo \
 			fs/fs \
 			user/testfdsharing \
 			user/testpipe \

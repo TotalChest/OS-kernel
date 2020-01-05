@@ -111,6 +111,9 @@ int	ftruncate(int fd, off_t size);
 int	remove(const char *path);
 int	sync(void);
 
+// fifo.c
+int mkfifo(const char *path);
+
 // pageref.c
 int	pageref(void *addr);
 
