@@ -71,7 +71,7 @@ umain(int argc, char **argv)
 
   		cprintf("Child\n");
 
-		while ((r = read(fifo_read_fd, buf, 10)) > 0)
+		while ((r = read(fifo_read_fd, buf, 8)) > 0)
 			cprintf("Read from fifo %d bytes: %s\n", r, buf);
 
 		cprintf("End of reading with code %d\n", r);
