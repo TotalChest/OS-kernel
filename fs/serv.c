@@ -279,14 +279,10 @@ serve_read_fifo(envid_t envid, union Fsipc *ipc)
 
 	int n = req->req_n;
 
-	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0){
-		cprintf("1111111111\n");
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
 		return r;
-	}
-	if ((r = file_get_block(o->o_file, 0, &blk)) < 0){
-		cprintf("2222222\n");
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
 		return r;
-	}
 
 	struct Fifo *fifo = (struct Fifo*) blk;
 
@@ -294,21 +290,24 @@ serve_read_fifo(envid_t envid, union Fsipc *ipc)
 	ret->ret_n = 0;
 
 	for (i = 0; i < n; i++) {
-		cprintf("read %d\n %d\n", i,fifo->fifo_rpos);
+
+		if (debug)
+			cprintf("read: %d\trpos: %d\n", i, fifo->fifo_rpos);
+
 		while (fifo->fifo_rpos == fifo->fifo_wpos) {
 			//empty
-			cprintf("empty\n");
 
-			//read part
+			//Read part
 			if (i > 0){
 				ret->ret_n = i;
 				return -E_FIFO;
 			}
-			//	return i;
 
+			//Any writers?
 			if (fifo->n_writers == 0)
 				return 0;
 
+			//Wait writers
 			ret->ret_n = i;
 			return -E_FIFO;
 	
@@ -317,6 +316,7 @@ serve_read_fifo(envid_t envid, union Fsipc *ipc)
 		fifo->fifo_rpos++;
 	}
 
+	ret->ret_n = i;
 	return i;
 }
 
@@ -349,10 +349,13 @@ int
 serve_write_fifo(envid_t envid, union Fsipc *ipc)
 {
 	struct Fsreq_write_fifo *req = &ipc->write_fifo;
+	struct Fsret_write *ret = &ipc->writeRet;
 	struct OpenFile *o;
 	char *blk, *buf;
 	int i, r;
+	int n = req->req_n;
 
+	buf = req->req_buf;
 
 	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
 		return r;
@@ -361,30 +364,35 @@ serve_write_fifo(envid_t envid, union Fsipc *ipc)
 
 	struct Fifo *fifo = (struct Fifo*) blk;
 
-	//if (fifo->n_readers == 0)
-	//	return -E_FIFO_OP;
-
-	buf = req->req_buf;
-	int n = req->req_n;
+	ret->ret_n = 0;
 
 	for (i = 0; i < n; i++) {
-		cprintf("write %d\n %d\n", i,fifo->fifo_wpos);
+
+		if (debug)
+			cprintf("write: %d\twpos: %d\n", i, fifo->fifo_wpos);
+
 		while (fifo->fifo_wpos >= fifo->fifo_rpos + sizeof(fifo->fifo_buf)) {
 			//full
-			cprintf("full\n");
-			if (i > 0)
-				return i;
-			
-			if (fifo->n_readers == 0)
-				return 0;
 
+			//Write part
+			if (i > 0){
+				ret->ret_n = i;
+				return -E_FIFO;
+			}
+			
+			//Any readers?
+			if (fifo->n_readers == 0)
+				return -E_FIF_CLOSE;
+
+			//Wait readers
+			ret->ret_n = i;
 			return -E_FIFO;
-			return i;
 		}
 		fifo->fifo_buf[fifo->fifo_wpos % FIFOBUFSIZ] = buf[i];
 		fifo->fifo_wpos++;
 	}
 
+	ret->ret_n = i;
 	return i;
 }
 
@@ -483,54 +491,6 @@ serve_close_fifo(envid_t envid, union Fsipc *ipc)
 	return 0;
 }
 
-int
-serve_get_fifo(envid_t envid, union Fsipc *ipc)
-{
-	struct Fsreq_get_set_fifo *req = &ipc->get_set_fifo;
-	struct OpenFile *o;
-	int r;
-	char *blk;
-
-	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
-		return r;
-	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
-		return r;
-
-	struct Fifo *fifo = (struct Fifo*) blk;
-
-	req->n_readers = fifo->n_readers;
-	req->n_writers = fifo->n_writers;
-	req->fifo_rpos = fifo->fifo_rpos;
-	req->fifo_wpos = fifo->fifo_wpos;
-	memmove(req->fifo_buf, fifo->fifo_buf, FIFOBUFSIZ);
-
-	return 0;
-}
-
-int
-serve_set_fifo(envid_t envid, union Fsipc *ipc)
-{
-	struct Fsreq_get_set_fifo *req = &ipc->get_set_fifo;
-	struct OpenFile *o;
-	int r;
-	char *blk;
-
-	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
-		return r;
-	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
-		return r;
-
-	struct Fifo *fifo = (struct Fifo*) blk;
-
-	fifo->n_readers = req->n_readers;
-	fifo->n_writers = req->n_writers;
-	fifo->fifo_rpos = req->fifo_rpos;
-	fifo->fifo_wpos = req->fifo_wpos;
-	memmove(fifo->fifo_buf,req->fifo_buf, FIFOBUFSIZ);
-
-	return 0;
-}
-
 typedef int (*fshandler)(envid_t envid, union Fsipc *req);
 
 fshandler handlers[] = {
@@ -545,9 +505,7 @@ fshandler handlers[] = {
 	[FSREQ_READ_FIFO] =		serve_read_fifo,
 	[FSREQ_STAT_FIFO] =		serve_stat_fifo,
 	[FSREQ_WRITE_FIFO] =		(fshandler)serve_write_fifo,
-	[FSREQ_CLOSE_FIFO] =		(fshandler)serve_close_fifo,
-	[FSREQ_GET_FIFO] =		(fshandler)serve_get_fifo,
-	[FSREQ_SET_FIFO] =		(fshandler)serve_set_fifo
+	[FSREQ_CLOSE_FIFO] =		(fshandler)serve_close_fifo
 };
 #define NHANDLERS (sizeof(handlers)/sizeof(handlers[0]))
 

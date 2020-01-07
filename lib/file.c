@@ -88,23 +88,7 @@ open(const char *path, int mode)
 		fd_close(fd, 0);
 		return r;
 	}
-/*
-	if (fd->fd_dev_id == devfifo.dev_id && mode == O_WRONLY)
-		do{
-			//sys_yield();
-			cprintf("s");
-			get_fifo(&fifo, fd->fd_file.id);
-		}
-		while(!fifo.n_readers);
 
-	if (fd->fd_dev_id == devfifo.dev_id && mode == O_RDONLY)
-		do{
-			//sys_yield();
-			cprintf("a");
-			get_fifo(&fifo, fd->fd_file.id);
-		}
-		while(!fifo.n_writers);
-*/
 	return fd2num(fd);
 }
 

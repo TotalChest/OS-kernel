@@ -115,8 +115,6 @@ int	sync(void);
 
 // fifo.c
 int mkfifo(const char *path);
-int get_fifo(struct Fifo *fifo, int id);
-int set_fifo(struct Fifo fifo, int id);
 
 // pageref.c
 int	pageref(void *addr);

@@ -29,8 +29,8 @@
 #define FIFOBUFSIZ 128
 
 struct Fifo {
-	int n_readers;
-	int n_writers;
+	int n_readers;	// number of readers
+	int n_writers;	// number of writers
 	off_t fifo_rpos;		// read position
 	off_t fifo_wpos;		// write position
 	uint8_t fifo_buf[FIFOBUFSIZ];	// data buffer
@@ -85,9 +85,7 @@ enum {
 	FSREQ_READ_FIFO,
 	FSREQ_WRITE_FIFO,
 	FSREQ_STAT_FIFO,
-	FSREQ_CLOSE_FIFO,
-	FSREQ_GET_FIFO,
-	FSREQ_SET_FIFO
+	FSREQ_CLOSE_FIFO
 };
 
 union Fsipc {
@@ -145,14 +143,10 @@ union Fsipc {
 	struct Fsreq_close_fifo {
 		int req_fileid;
 	} close_fifo;
-	struct Fsreq_get_set_fifo {
-		int req_fileid;
-		int n_readers;
-		int n_writers;
-		off_t fifo_rpos;		// read position
-		off_t fifo_wpos;		// write position
-		uint8_t fifo_buf[FIFOBUFSIZ];
-	} get_set_fifo;
+	struct Fsret_write {
+		int ret_n;
+	} writeRet;
+
 
 	// Ensure Fsipc is one page
 	char _pad[PGSIZE];
