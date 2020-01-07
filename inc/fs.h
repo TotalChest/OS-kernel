@@ -26,6 +26,16 @@
 
 #define MAXFILESIZE	((NDIRECT + NINDIRECT) * BLKSIZE)
 
+#define FIFOBUFSIZ 128
+
+struct Fifo {
+	int n_readers;
+	int n_writers;
+	off_t fifo_rpos;		// read position
+	off_t fifo_wpos;		// write position
+	uint8_t fifo_buf[FIFOBUFSIZ];	// data buffer
+};
+
 struct File {
 	char f_name[MAXNAMELEN];	// filename
 	off_t f_size;			// file size in bytes
@@ -71,7 +81,13 @@ enum {
 	FSREQ_FLUSH,
 	FSREQ_REMOVE,
 	FSREQ_SYNC,
-	FSREQ_CREATE_FIFO
+	FSREQ_CREATE_FIFO,
+	FSREQ_READ_FIFO,
+	FSREQ_WRITE_FIFO,
+	FSREQ_STAT_FIFO,
+	FSREQ_CLOSE_FIFO,
+	FSREQ_GET_FIFO,
+	FSREQ_SET_FIFO
 };
 
 union Fsipc {
@@ -91,7 +107,8 @@ union Fsipc {
 		size_t req_n;
 	} read;
 	struct Fsret_read {
-		char ret_buf[PGSIZE];
+		int ret_n;
+		char ret_buf[PGSIZE - sizeof(int)];
 	} readRet;
 	struct Fsreq_write {
 		int req_fileid;
@@ -113,6 +130,29 @@ union Fsipc {
 	struct Fsreq_remove {
 		char req_path[MAXPATHLEN];
 	} remove;
+	struct Fsreq_read_fifo {
+		int req_fileid;
+		size_t req_n;
+	} read_fifo;
+	struct Fsreq_write_fifo {
+		int req_fileid;
+		size_t req_n;
+		char req_buf[PGSIZE - (sizeof(int) + sizeof(size_t))];
+	} write_fifo;
+	struct Fsreq_stat_fifo {
+		int req_fileid;
+	} stat_fifo;
+	struct Fsreq_close_fifo {
+		int req_fileid;
+	} close_fifo;
+	struct Fsreq_get_set_fifo {
+		int req_fileid;
+		int n_readers;
+		int n_writers;
+		off_t fifo_rpos;		// read position
+		off_t fifo_wpos;		// write position
+		uint8_t fifo_buf[FIFOBUFSIZ];
+	} get_set_fifo;
 
 	// Ensure Fsipc is one page
 	char _pad[PGSIZE];

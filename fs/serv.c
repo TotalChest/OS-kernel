@@ -14,7 +14,7 @@
 
 #define debug 0
 
-#define BUFSIZE PGSIZE
+#define BUFSIZE PGSIZE - (sizeof(int) + sizeof(size_t))
 // The file system server maintains three structures
 // for each open file.
 //
@@ -72,7 +72,6 @@ openfile_alloc(struct OpenFile **o)
 		case 0:
 			if ((r = sys_page_alloc(0, opentab[i].o_fd, PTE_P|PTE_U|PTE_W)) < 0)
 				return r;
-			/* fall through */
 		case 1:
 			opentab[i].o_fileid += MAXOPEN;
 			*o = &opentab[i];
@@ -105,9 +104,9 @@ serve_open(envid_t envid, struct Fsreq_open *req,
 {
 	char path[MAXPATHLEN];
 	struct File *f;
-	int fileid;
 	int r;
 	struct OpenFile *o;
+	char *blk;
 
 	if (debug)
 		cprintf("serve_open %08x %s 0x%x\n", envid, req->req_path, req->req_omode);
@@ -115,14 +114,6 @@ serve_open(envid_t envid, struct Fsreq_open *req,
 	// Copy in the path, making sure it's null-terminated
 	memmove(path, req->req_path, MAXPATHLEN);
 	path[MAXPATHLEN-1] = 0;
-
-	// Find an open file ID
-	if ((r = openfile_alloc(&o)) < 0) {
-		if (debug)
-			cprintf("openfile_alloc failed: %i", r);
-		return r;
-	}
-	fileid = r;
 
 	// Open the file
 	if (req->req_omode & O_CREAT) {
@@ -156,17 +147,34 @@ try_open:
 		return r;
 	}
 
-	// Save the file pointer
-	o->o_file = f;
+	if ((r = openfile_alloc(&o)) < 0) {
+		return r;
+	}
 
-	// Fill out the Fd structure
+	o->o_file = f;
 	o->o_fd->fd_file.id = o->o_fileid;
 	o->o_fd->fd_omode = req->req_omode & O_ACCMODE;
-	if (f->f_type == FTYPE_FIF)
-		o->o_fd->fd_dev_id = devfifo.dev_id;
-	else
-		o->o_fd->fd_dev_id = devfile.dev_id;
+	o->o_fd->fd_dev_id = devfile.dev_id;
 	o->o_mode = req->req_omode;
+
+	if (f->f_type == FTYPE_FIF){
+
+		if ((r = file_get_block(f, 0, &blk)) < 0)
+			return r;
+
+		struct Fifo *fifo = (struct Fifo*) blk;
+
+		if ((req->req_omode != O_RDONLY)
+			&& (req->req_omode != O_WRONLY))
+			return -E_INVAL;
+
+		if (req->req_omode == O_RDONLY)
+			fifo->n_readers++;
+		if (req->req_omode == O_WRONLY)
+			fifo->n_writers++;
+
+		o->o_fd->fd_dev_id = devfifo.dev_id;
+	}
 
 	if (debug)
 		cprintf("sending success, page %08x\n", (uintptr_t) o->o_fd);
@@ -185,6 +193,7 @@ serve_create_fifo(envid_t envid, struct Fsreq_create_fifo *req)
 	char path[MAXPATHLEN];
 	struct File *f;
 	int r;
+	char *blk;
 
 	memmove(path, req->req_path, MAXPATHLEN);
 	path[MAXPATHLEN-1] = 0;
@@ -192,6 +201,18 @@ serve_create_fifo(envid_t envid, struct Fsreq_create_fifo *req)
 	if ((r = fifo_create(path, &f)) < 0) {
 		return r;
 	}
+	if ((r = file_set_size(f, sizeof(struct Fifo))) < 0)
+		return r;
+
+	if ((r = file_get_block(f, 0, &blk)) < 0)
+		return r;
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	fifo->n_writers = 0;
+	fifo->n_readers = 0;
+	fifo->fifo_rpos = 0;
+	fifo->fifo_wpos = 0;
 
 	return 0;
 }
@@ -247,6 +268,58 @@ serve_read(envid_t envid, union Fsipc *ipc)
 	return r;
 }
 
+int
+serve_read_fifo(envid_t envid, union Fsipc *ipc)
+{
+	struct Fsreq_read_fifo *req = &ipc->read_fifo;
+	struct Fsret_read *ret = &ipc->readRet;
+	struct OpenFile *o;
+	int r, i;
+	char *blk, *buf;
+
+	int n = req->req_n;
+
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0){
+		cprintf("1111111111\n");
+		return r;
+	}
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0){
+		cprintf("2222222\n");
+		return r;
+	}
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	buf = ret->ret_buf;
+	ret->ret_n = 0;
+
+	for (i = 0; i < n; i++) {
+		cprintf("read %d\n %d\n", i,fifo->fifo_rpos);
+		while (fifo->fifo_rpos == fifo->fifo_wpos) {
+			//empty
+			cprintf("empty\n");
+
+			//read part
+			if (i > 0){
+				ret->ret_n = i;
+				return -E_FIFO;
+			}
+			//	return i;
+
+			if (fifo->n_writers == 0)
+				return 0;
+
+			ret->ret_n = i;
+			return -E_FIFO;
+	
+		}
+		buf[i] = fifo->fifo_buf[fifo->fifo_rpos % FIFOBUFSIZ];
+		fifo->fifo_rpos++;
+	}
+
+	return i;
+}
+
 
 // Write req->req_n bytes from req->req_buf to req_fileid, starting at
 // the current seek position, and update the seek position
@@ -272,6 +345,49 @@ serve_write(envid_t envid, struct Fsreq_write *req)
 	return r;
 }
 
+int
+serve_write_fifo(envid_t envid, union Fsipc *ipc)
+{
+	struct Fsreq_write_fifo *req = &ipc->write_fifo;
+	struct OpenFile *o;
+	char *blk, *buf;
+	int i, r;
+
+
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
+		return r;
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	//if (fifo->n_readers == 0)
+	//	return -E_FIFO_OP;
+
+	buf = req->req_buf;
+	int n = req->req_n;
+
+	for (i = 0; i < n; i++) {
+		cprintf("write %d\n %d\n", i,fifo->fifo_wpos);
+		while (fifo->fifo_wpos >= fifo->fifo_rpos + sizeof(fifo->fifo_buf)) {
+			//full
+			cprintf("full\n");
+			if (i > 0)
+				return i;
+			
+			if (fifo->n_readers == 0)
+				return 0;
+
+			return -E_FIFO;
+			return i;
+		}
+		fifo->fifo_buf[fifo->fifo_wpos % FIFOBUFSIZ] = buf[i];
+		fifo->fifo_wpos++;
+	}
+
+	return i;
+}
+
 // Stat ipc->stat.req_fileid.  Return the file's struct Stat to the
 // caller in ipc->statRet.
 int
@@ -291,7 +407,30 @@ serve_stat(envid_t envid, union Fsipc *ipc)
 	strcpy(ret->ret_name, o->o_file->f_name);
 	ret->ret_size = o->o_file->f_size;
 	ret->ret_isdir = (o->o_file->f_type == FTYPE_DIR);
-	ret->ret_isfifo = (o->o_file->f_type == FTYPE_DIR);
+	ret->ret_isfifo = (o->o_file->f_type == FTYPE_FIF);
+	return 0;
+}
+
+int
+serve_stat_fifo(envid_t envid, union Fsipc *ipc)
+{
+	struct Fsreq_stat_fifo *req = &ipc->stat_fifo;
+	struct Fsret_stat *ret = &ipc->statRet;
+	struct OpenFile *o;
+	int r;
+	char *blk;
+
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
+		return r;
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	strcpy(ret->ret_name, o->o_file->f_name);
+	ret->ret_size = fifo->fifo_wpos - fifo->fifo_rpos;
+	ret->ret_isdir = 0;
+	ret->ret_isfifo = 1;
 	return 0;
 }
 
@@ -319,6 +458,79 @@ serve_sync(envid_t envid, union Fsipc *req)
 	return 0;
 }
 
+int
+serve_close_fifo(envid_t envid, union Fsipc *ipc)
+{
+	struct Fsreq_close_fifo *req = &ipc->close_fifo;
+	struct OpenFile *o;
+	int r;
+	char *blk;
+
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
+		return r;
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	if (o->o_mode == O_RDONLY)
+		fifo->n_readers--;
+	if (o->o_mode == O_WRONLY)
+		fifo->n_writers--;
+
+	file_flush(o->o_file);
+
+	return 0;
+}
+
+int
+serve_get_fifo(envid_t envid, union Fsipc *ipc)
+{
+	struct Fsreq_get_set_fifo *req = &ipc->get_set_fifo;
+	struct OpenFile *o;
+	int r;
+	char *blk;
+
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
+		return r;
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	req->n_readers = fifo->n_readers;
+	req->n_writers = fifo->n_writers;
+	req->fifo_rpos = fifo->fifo_rpos;
+	req->fifo_wpos = fifo->fifo_wpos;
+	memmove(req->fifo_buf, fifo->fifo_buf, FIFOBUFSIZ);
+
+	return 0;
+}
+
+int
+serve_set_fifo(envid_t envid, union Fsipc *ipc)
+{
+	struct Fsreq_get_set_fifo *req = &ipc->get_set_fifo;
+	struct OpenFile *o;
+	int r;
+	char *blk;
+
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if ((r = file_get_block(o->o_file, 0, &blk)) < 0)
+		return r;
+
+	struct Fifo *fifo = (struct Fifo*) blk;
+
+	fifo->n_readers = req->n_readers;
+	fifo->n_writers = req->n_writers;
+	fifo->fifo_rpos = req->fifo_rpos;
+	fifo->fifo_wpos = req->fifo_wpos;
+	memmove(fifo->fifo_buf,req->fifo_buf, FIFOBUFSIZ);
+
+	return 0;
+}
+
 typedef int (*fshandler)(envid_t envid, union Fsipc *req);
 
 fshandler handlers[] = {
@@ -329,7 +541,13 @@ fshandler handlers[] = {
 	[FSREQ_FLUSH] =		(fshandler)serve_flush,
 	[FSREQ_WRITE] =		(fshandler)serve_write,
 	[FSREQ_SET_SIZE] =	(fshandler)serve_set_size,
-	[FSREQ_SYNC] =		serve_sync
+	[FSREQ_SYNC] =		serve_sync,
+	[FSREQ_READ_FIFO] =		serve_read_fifo,
+	[FSREQ_STAT_FIFO] =		serve_stat_fifo,
+	[FSREQ_WRITE_FIFO] =		(fshandler)serve_write_fifo,
+	[FSREQ_CLOSE_FIFO] =		(fshandler)serve_close_fifo,
+	[FSREQ_GET_FIFO] =		(fshandler)serve_get_fifo,
+	[FSREQ_SET_FIFO] =		(fshandler)serve_set_fifo
 };
 #define NHANDLERS (sizeof(handlers)/sizeof(handlers[0]))
 

@@ -56,7 +56,7 @@ struct Dev devfile =
 // 	-E_BAD_PATH if the path is too long (>= MAXPATHLEN)
 // 	< 0 for other errors.
 int
-open(const char *path, int mode)//
+open(const char *path, int mode)
 {
 	// Find an unused file descriptor page using fd_alloc.
 	// Then send a file-open request to the file server.
@@ -88,7 +88,23 @@ open(const char *path, int mode)//
 		fd_close(fd, 0);
 		return r;
 	}
+/*
+	if (fd->fd_dev_id == devfifo.dev_id && mode == O_WRONLY)
+		do{
+			//sys_yield();
+			cprintf("s");
+			get_fifo(&fifo, fd->fd_file.id);
+		}
+		while(!fifo.n_readers);
 
+	if (fd->fd_dev_id == devfifo.dev_id && mode == O_RDONLY)
+		do{
+			//sys_yield();
+			cprintf("a");
+			get_fifo(&fifo, fd->fd_file.id);
+		}
+		while(!fifo.n_writers);
+*/
 	return fd2num(fd);
 }
 
@@ -127,7 +143,7 @@ devfile_read(struct Fd *fd, void *buf, size_t n)
 		return r;
 	assert(r <= n);
 	assert(r <= PGSIZE);
-	memmove(buf, &fsipcbuf, r);
+	memmove(buf, fsipcbuf.readRet.ret_buf, r);
 	return r;
 }
 
